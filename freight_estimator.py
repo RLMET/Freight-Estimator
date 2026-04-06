@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """
-A2 Road Freight Rate Estimator — v2.0
+A2 Road Freight Rate Estimator — v2.1
 ======================================
 Self-contained: no external files required. All data is hard-coded.
 FAF (Fuel Adjustment Factor) is adjustable weekly via the sidebar.
 
 Built for Middle Earth Tiles | Origin: Warkworth, New Zealand
 Last updated: April 2026
+Data current to: February 2026 (64 invoice records, Dec 2024 – Feb 2026)
 
 To run:
     pip install streamlit pandas numpy
@@ -120,73 +121,90 @@ NZ_LOCATIONS_RAW = [
 ]
 
 # =============================================================================
-# HARD-CODED HISTORICAL FREIGHT DATA (sourced from historical_freight_data.csv)
-# These are the original A2 Road Freight invoice records.
+# HARD-CODED HISTORICAL FREIGHT DATA (sourced from A2 Spreadsheet to Feb 26.xlsx)
+# Complete invoice records Dec 2024 – Feb 2026. 64 records across 13 months.
 # The FAF multiplier (set in sidebar) is applied on top of these base rates.
+# To update: drag the latest spreadsheet to Claude and ask for a monthly update.
 # =============================================================================
 
 HISTORICAL_DATA_RAW = [
-    # (Town, Actual_Weight_kg, Volume_m3, Single_Price)
-    ("Auckland",        160,    0.206,   55.00),
-    ("Oamaru",           80,    0.087,  117.45),
-    ("Wellington",      100,    0.221,   97.79),
-    ("Dunedin",          40,    0.110,  117.95),
-    ("Auckland",        200,    0.432,   65.00),
-    ("Tauranga",        285,    0.600,  107.79),
-    ("Paraparaumu",     530,    0.840,  284.91),
-    ("Lower Hutt",      390,    0.280,  218.71),
-    ("Christchurch",    400,    0.800,  228.72),
-    ("Christchurch",     60,    0.200,  123.95),
-    ("Auckland",         80,    0.200,   55.00),
-    ("Auckland",         50,    0.100,   55.00),
-    ("Auckland",        340,    0.500,   65.00),
-    ("Auckland",        435,    0.908,   71.78),
-    ("Kaiwaka",         710,    1.200,  150.00),
-    ("Hastings",         80,    0.100,   97.23),
-    ("Blenheim",        787,    0.992,  415.00),
-    ("Tauranga",        300,    0.720,   97.23),
-    ("Auckland",        120,    0.486,   55.00),
-    ("Auckland",       1640,    0.160,  319.80),
-    ("Hawera Flat",     375,    0.614,  442.05),
-    ("Wellington",      108,    0.280,   97.23),
-    ("Christchurch",   2612,    2.000, 1722.46),
-    ("Wanaka",         3082,    2.400, 2911.80),
-    ("Mt Maunganui",    170,    0.600,   97.23),
-    ("Tauranga",        195,    0.300,   97.23),
-    ("Wellington",      250,    0.538,  142.98),
-    ("Te Awamutu",      240,    0.400,  126.60),
-    ("Wanganui",        117,    0.178,   97.23),
-    ("Lower Hutt",       82,    0.200,   97.23),
-    ("Auckland",         80,    0.324,   55.00),
-    ("Gisborne",         73,    0.243,   99.56),
-    ("Warkworth",        13,    0.020,   35.00),
-    ("Invercargill",    130,    0.324,  182.52),
-    ("Gisborne",        586,    0.900,  316.05),
-    ("Hamilton",        553,    1.000,  144.83),
-    ("Wellington",       70,    0.400,   97.23),
-    ("Christchurch",    245,    0.300,  145.42),
-    ("Wellington",      105,    0.200,   97.29),
-    ("Wellington",     2674,    2.800,  593.26),
-    ("Whangarei Heads", 520,    0.700,  309.81),
-    ("Auckland",        450,    0.700,   91.00),
-    ("Wellington",      260,    0.480,  155.21),
-    ("Levin",            70,    0.162,   97.23),
-    ("Auckland",         98,    0.244,   55.00),
-    ("Alexandra",       420,    0.600,  383.50),
-    ("Clarks Beach",    670,    0.924,  370.28),
-    ("Auckland",        405,    0.538,   55.00),
-    ("Dunedin",          99,    0.300,  141.13),
-    ("Christchurch",    120,    0.346,  127.39),
-    ("Tauranga",        220,    0.700,   97.23),
-    ("Auckland",         55,    0.251,   55.00),
-    ("Maranda",         259,    0.456,  373.14),
-    ("Waipukurau",      980,    0.800,  496.06),
-    ("Whangarei Heads", 980,    1.100,  559.52),
-    ("Napier",          102,    0.300,   97.23),
-    ("Mt Maunganui",    230,    0.432,   97.23),
-    ("Napier",           97,    0.154,   97.23),
-    ("Warkworth",      2565,    3.900,  638.72),
-    ("Invercargill",    130,    0.324,  182.52),
+    # (Date, Town, Actual_Weight_kg, Volume_m3, Single_Price)
+    # --- Feb 2026 ---
+    ("2026-02-04", "Wanaka",        350,    0.750,   357.01),
+    ("2026-02-05", "Auckland",      900,    2.000,   148.50),
+    ("2026-02-11", "Auckland",      946,    1.500,   156.09),
+    ("2026-02-13", "Auckland",      300,    0.400,    55.00),
+    ("2026-02-17", "Auckland",      600,    0.800,    99.00),
+    ("2026-02-24", "Auckland",      343,    0.300,    65.00),
+    # --- Jan 2026 ---
+    ("2026-01-12", "Auckland",      160,    0.206,    55.00),
+    ("2026-01-14", "Oamaru",         80,    0.087,   117.45),
+    ("2026-01-20", "Wellington",    100,    0.221,    97.79),
+    ("2026-01-21", "Dunedin",        40,    0.110,   117.95),
+    ("2026-01-22", "Auckland",      200,    0.432,    65.00),
+    ("2026-01-27", "Tauranga",      285,    0.600,   107.79),
+    # --- Dec 2025 ---
+    ("2025-12-08", "Paraparaumu",   530,    0.840,   284.91),
+    ("2025-12-08", "Lower Hutt",    390,    0.280,   218.71),
+    ("2025-12-15", "Christchurch",  400,    0.800,   228.72),
+    ("2025-12-17", "Christchurch",   60,    0.200,   123.95),
+    # --- Nov 2025 ---
+    ("2025-11-11", "Auckland",       80,    0.200,    55.00),
+    ("2025-11-11", "Auckland",       50,    0.100,    55.00),
+    ("2025-11-12", "Auckland",      340,    0.500,    65.00),
+    ("2025-11-17", "Auckland",      435,    0.908,    71.78),
+    ("2025-11-27", "Kaiwaka",       710,    1.200,   150.00),
+    # --- Oct 2025 ---
+    ("2025-10-09", "Hastings",       80,    0.100,    97.23),
+    ("2025-10-13", "Blenheim",      787,    0.992,   415.00),
+    ("2025-10-13", "Tauranga",      300,    0.720,    97.23),
+    ("2025-10-14", "Auckland",      120,    0.486,    55.00),
+    ("2025-10-31", "Auckland",     1640,    0.160,   319.80),
+    # --- Sep 2025 ---
+    ("2025-09-24", "Hawera Flat",   375,    0.614,   442.05),
+    ("2025-09-25", "Wellington",    108,    0.280,    97.23),
+    ("2025-09-26", "Christchurch", 2612,    2.000,  1722.46),
+    ("2025-09-26", "Wanaka",       3082,    2.400,  2911.80),
+    # --- Aug 2025 ---
+    ("2025-08-05", "Mt Maunganui",  170,    0.600,    97.23),
+    ("2025-08-05", "Tauranga",      195,    0.300,    97.23),
+    ("2025-08-29", "Wellington",    250,    0.538,   142.98),
+    # --- Jul 2025 ---
+    ("2025-07-02", "Te Awamutu",    240,    0.400,   126.60),
+    ("2025-07-15", "Wanganui",      117,    0.178,    97.23),
+    ("2025-07-24", "Lower Hutt",     82,    0.200,    97.23),
+    # --- Jun 2025 ---
+    ("2025-06-12", "Auckland",       80,    0.324,    55.00),
+    ("2025-06-12", "Gisborne",       73,    0.243,    99.56),
+    ("2025-06-12", "Warkworth",      13,    0.020,    35.00),
+    ("2025-06-12", "Invercargill",  130,    0.324,   182.52),
+    ("2025-06-16", "Gisborne",      586,    0.900,   316.05),
+    ("2025-06-16", "Hamilton",      553,    1.000,   144.83),
+    ("2025-06-18", "Wellington",     70,    0.400,    97.23),
+    ("2025-06-23", "Christchurch",  245,    0.300,   145.42),
+    ("2025-06-24", "Wellington",    105,    0.200,    97.29),
+    # --- May 2025 ---
+    ("2025-05-09", "Wellington",   2674,    2.800,   593.26),
+    ("2025-05-13", "Whangarei Heads", 520,  0.700,  309.81),
+    ("2025-05-14", "Auckland",      450,    0.700,    91.00),
+    ("2025-05-26", "Wellington",    260,    0.480,   155.21),
+    # --- Apr 2025 ---
+    ("2025-04-07", "Levin",          70,    0.162,    97.23),
+    ("2025-04-24", "Auckland",       98,    0.244,    55.00),
+    ("2025-04-29", "Alexandra",     420,    0.600,   383.50),
+    # --- Mar 2025 ---
+    ("2025-03-11", "Clarks Beach",  670,    0.924,   370.28),
+    ("2025-03-12", "Auckland",      405,    0.538,    55.00),
+    ("2025-03-12", "Dunedin",        99,    0.300,   141.13),
+    ("2025-03-13", "Christchurch",  120,    0.346,   127.39),
+    ("2025-03-18", "Tauranga",      220,    0.700,    97.23),
+    ("2025-03-19", "Auckland",       55,    0.251,    55.00),
+    ("2025-03-27", "Maranda",       259,    0.456,   373.14),
+    # --- Dec 2024 ---
+    ("2024-12-09", "Napier",        102,    0.300,    97.23),
+    ("2024-12-11", "Mt Maunganui",  230,    0.432,    97.23),
+    ("2024-12-17", "Napier",         97,    0.154,    97.23),
+    ("2024-12-19", "Warkworth",    2565,    3.900,   638.72),
 ]
 
 # =============================================================================
@@ -250,7 +268,7 @@ def load_historical():
     loc_df = load_locations()
     loc_lookup = {r.city_lower: r for r in loc_df.itertuples()}
 
-    for town, actual_kg, vol_m3, price in HISTORICAL_DATA_RAW:
+    for date, town, actual_kg, vol_m3, price in HISTORICAL_DATA_RAW:
         vol_wt = volumetric_weight(vol_m3)
         chg_wt = max(actual_kg, vol_wt)
         rate_per_kg = price / chg_wt if chg_wt > 0 else 0
@@ -263,6 +281,7 @@ def load_historical():
         dist = haversine(WARKWORTH_LAT, WARKWORTH_LNG, lat, lng) if lat else None
 
         rows.append({
+            "Date":             date,
             "Town":             town,
             "Actual_Weight_kg": actual_kg,
             "Volume_m3":        vol_m3,
@@ -556,10 +575,10 @@ def main():
 
         st.dataframe(
             display_df[[
-                "Town", "region", "Actual_Weight_kg", "Volume_m3",
+                "Date", "Town", "region", "Actual_Weight_kg", "Volume_m3",
                 "Chargeable_Weight_kg", "Single_Price", "Cost_Per_kg",
                 "Distance_from_Warkworth_km"
-            ]].style.format({
+            ]].sort_values("Date", ascending=False).style.format({
                 "Single_Price":              "${:.2f}",
                 "Cost_Per_kg":               "${:.4f}",
                 "Chargeable_Weight_kg":      "{:.1f}",
