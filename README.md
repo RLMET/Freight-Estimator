@@ -1,201 +1,629 @@
-[Uploading README.md…]()
-# A2 Road Freight Rate Estimator
+[freight_estimator.py](https://github.com/user-attachments/files/26518210/freight_estimator.py)
+#!/usr/bin/env python3
+"""
+A2 Road Freight Rate Estimator — v2.0
+======================================
+Self-contained: no external files required. All data is hard-coded.
+FAF (Fuel Adjustment Factor) is adjustable weekly via the sidebar.
 
-A Streamlit-based freight rate estimation tool for A2 Road Freight, originating from Warkworth, New Zealand.
+Built for Middle Earth Tiles | Origin: Warkworth, New Zealand
+Last updated: April 2026
 
-## Features
+To run:
+    pip install streamlit pandas numpy
+    streamlit run freight_estimator.py
+"""
 
-- **Volumetric Weight Calculation**: Automatically calculates volumetric weight using the 1m³ = 333kg conversion
-- **"Greater Of" Logic**: Uses the higher value between actual weight and volumetric weight
-- **Regional Categorization**: Classifies destinations into Upper North Island, Lower North Island, and South Island based on latitude
-- **Southward Bias Estimation**: Prevents undercharging by preferring reference towns at equal or southern latitudes
-- **Safety Margin**: Applies 10% buffer when only northern reference towns are available
-- **Multi-User Access**: Web-based interface for simultaneous use by multiple team members
+import streamlit as st
+import pandas as pd
+import numpy as np
+from math import radians, cos, sin, asin, sqrt
+from datetime import datetime
 
-## Installation & Setup
+# =============================================================================
+# HARD-CODED NZ LOCATION DATABASE (sourced from nz.xlsx)
+# =============================================================================
 
-### Prerequisites
+NZ_LOCATIONS_RAW = [
+    ("Auckland",          -36.8406,  174.7400),
+    ("Christchurch",      -43.5310,  172.6365),
+    ("Manukau City",      -37.0000,  174.8850),
+    ("Wellington",        -41.2889,  174.7772),
+    ("Northcote",         -36.8019,  174.7494),
+    ("Hamilton",          -37.7833,  175.2833),
+    ("Tauranga",          -37.6833,  176.1667),
+    ("Lower Hutt",        -41.2167,  174.9167),
+    ("Dunedin",           -45.8742,  170.5036),
+    ("Palmerston North",  -40.3550,  175.6117),
+    ("Napier",            -39.4903,  176.9178),
+    ("New Plymouth",      -39.0578,  174.0742),
+    ("Porirua",           -41.1333,  174.8500),
+    ("Rotorua",           -38.1378,  176.2514),
+    ("Whangarei",         -35.7250,  174.3236),
+    ("Invercargill",      -46.4131,  168.3475),
+    ("Nelson",            -41.2708,  173.2839),
+    ("Upper Hutt",        -41.1333,  175.0500),
+    ("Gisborne",          -38.6625,  178.0178),
+    ("Paraparaumu",       -40.9144,  175.0056),
+    ("Timaru",            -44.3931,  171.2508),
+    ("Blenheim",          -41.5140,  173.9600),
+    ("Taupo",             -38.6875,  176.0694),
+    ("Cambridge",         -37.8833,  175.4667),
+    ("Feilding",          -40.2167,  175.5667),
+    ("Levin",             -40.6219,  175.2867),
+    ("Rolleston",         -43.5833,  172.3833),
+    ("Whakatane",         -37.9600,  176.9800),
+    ("Richmond",          -41.3333,  173.1833),
+    ("Havelock North",    -39.6667,  176.8833),
+    ("Tokoroa",           -38.2167,  175.8667),
+    ("Mosgiel",           -45.8750,  170.3486),
+    ("Te Awamutu",        -38.0167,  175.3167),
+    ("Waikanae",          -40.8750,  175.0639),
+    ("Hawera",            -39.5933,  174.2783),
+    ("Waiuku",            -37.2490,  174.7300),
+    ("Paraparaumu Beach", -40.8938,  174.9794),
+    ("Wanaka",            -44.7000,  169.1500),
+    ("Te Puke",           -37.7667,  176.3167),
+    ("Greymouth",         -42.4500,  171.2075),
+    ("Matamata",          -37.8167,  175.7667),
+    ("Thames",            -37.1383,  175.5375),
+    ("Kawerau",           -38.1000,  176.7000),
+    ("Kerikeri",          -35.2244,  173.9514),
+    ("Waitara",           -38.9958,  174.2331),
+    ("Ngaruawahia",       -37.6667,  175.1500),
+    ("Mount Maunganui",   -37.6598,  176.2148),
+    ("Lincoln",           -43.6500,  172.4833),
+    ("Kaitaia",           -35.1125,  173.2628),
+    ("Stratford",         -39.3333,  174.2833),
+    ("Alexandra",         -45.2492,  169.3797),
+    ("Cromwell",          -45.0459,  169.1956),
+    ("Warkworth",         -36.4000,  174.6667),
+    ("Waihi",             -37.3833,  175.8333),
+    ("Raumati Beach",     -40.9187,  174.9811),
+    ("Marton",            -40.0692,  175.3783),
+    ("Whitianga",         -36.8333,  175.7000),
+    ("Tuakau",            -37.2667,  174.9500),
+    ("Dargaville",        -35.9333,  173.8833),
+    ("Katikati",          -37.5500,  175.9167),
+    ("Westport",          -41.7581,  171.6022),
+    ("Tauwhare",          -37.7698,  175.4592),
+    ("Te Aroha",          -37.5333,  175.7167),
+    ("Kaikohe",           -35.4075,  173.7997),
+    ("Prebbleton",        -43.5783,  172.5133),
+    ("Paeroa",            -37.3750,  175.6667),
+    ("Whangamata",        -37.2000,  175.8667),
+    ("Balclutha",         -46.2333,  169.7500),
+    ("Snells Beach",      -36.4222,  174.7275),
+    ("Turangi",           -38.9889,  175.8083),
+    ("Raglan",            -37.8000,  174.8833),
+    ("Foxton",            -40.4717,  175.2858),
+    ("Darfield",          -43.4833,  172.1167),
+    ("Ashhurst",          -40.3000,  175.7500),
+    ("Hokitika",          -42.7156,  170.9681),
+    ("Helensville",       -36.6797,  174.4494),
+    ("Woodend",           -43.3167,  172.6667),
+    ("Kihikihi",          -38.0333,  175.3500),
+    ("Pahiatua",          -40.4533,  175.8408),
+    ("Wakefield",         -41.4000,  173.0500),
+    ("Ruakaka",           -35.9084,  174.4596),
+    ("Winton",            -46.1431,  168.3236),
+    ("Maraetai",          -36.8810,  175.0420),
+    ("Te Anau",           -45.4167,  167.7167),
+    ("Clive",             -39.5833,  176.9167),
+    ("Oxford",            -43.3128,  172.1906),
+    ("Pokeno",            -37.2333,  175.0167),
+    ("Milton",            -46.1167,  169.9667),
+    ("Waihi Beach",       -37.4000,  175.9333),
+    ("Brightwater",       -41.3790,  173.1140),
+    ("Leeston",           -43.7667,  172.3000),
+    ("West Melton",       -43.5167,  172.3667),
+    ("Waitangi",          -43.9514, -176.5611),
+]
 
-- Python 3.8 or higher
-- pip package manager
+# =============================================================================
+# HARD-CODED HISTORICAL FREIGHT DATA (sourced from historical_freight_data.csv)
+# These are the original A2 Road Freight invoice records.
+# The FAF multiplier (set in sidebar) is applied on top of these base rates.
+# =============================================================================
 
-### Install Dependencies
+HISTORICAL_DATA_RAW = [
+    # (Town, Actual_Weight_kg, Volume_m3, Single_Price)
+    ("Auckland",        160,    0.206,   55.00),
+    ("Oamaru",           80,    0.087,  117.45),
+    ("Wellington",      100,    0.221,   97.79),
+    ("Dunedin",          40,    0.110,  117.95),
+    ("Auckland",        200,    0.432,   65.00),
+    ("Tauranga",        285,    0.600,  107.79),
+    ("Paraparaumu",     530,    0.840,  284.91),
+    ("Lower Hutt",      390,    0.280,  218.71),
+    ("Christchurch",    400,    0.800,  228.72),
+    ("Christchurch",     60,    0.200,  123.95),
+    ("Auckland",         80,    0.200,   55.00),
+    ("Auckland",         50,    0.100,   55.00),
+    ("Auckland",        340,    0.500,   65.00),
+    ("Auckland",        435,    0.908,   71.78),
+    ("Kaiwaka",         710,    1.200,  150.00),
+    ("Hastings",         80,    0.100,   97.23),
+    ("Blenheim",        787,    0.992,  415.00),
+    ("Tauranga",        300,    0.720,   97.23),
+    ("Auckland",        120,    0.486,   55.00),
+    ("Auckland",       1640,    0.160,  319.80),
+    ("Hawera Flat",     375,    0.614,  442.05),
+    ("Wellington",      108,    0.280,   97.23),
+    ("Christchurch",   2612,    2.000, 1722.46),
+    ("Wanaka",         3082,    2.400, 2911.80),
+    ("Mt Maunganui",    170,    0.600,   97.23),
+    ("Tauranga",        195,    0.300,   97.23),
+    ("Wellington",      250,    0.538,  142.98),
+    ("Te Awamutu",      240,    0.400,  126.60),
+    ("Wanganui",        117,    0.178,   97.23),
+    ("Lower Hutt",       82,    0.200,   97.23),
+    ("Auckland",         80,    0.324,   55.00),
+    ("Gisborne",         73,    0.243,   99.56),
+    ("Warkworth",        13,    0.020,   35.00),
+    ("Invercargill",    130,    0.324,  182.52),
+    ("Gisborne",        586,    0.900,  316.05),
+    ("Hamilton",        553,    1.000,  144.83),
+    ("Wellington",       70,    0.400,   97.23),
+    ("Christchurch",    245,    0.300,  145.42),
+    ("Wellington",      105,    0.200,   97.29),
+    ("Wellington",     2674,    2.800,  593.26),
+    ("Whangarei Heads", 520,    0.700,  309.81),
+    ("Auckland",        450,    0.700,   91.00),
+    ("Wellington",      260,    0.480,  155.21),
+    ("Levin",            70,    0.162,   97.23),
+    ("Auckland",         98,    0.244,   55.00),
+    ("Alexandra",       420,    0.600,  383.50),
+    ("Clarks Beach",    670,    0.924,  370.28),
+    ("Auckland",        405,    0.538,   55.00),
+    ("Dunedin",          99,    0.300,  141.13),
+    ("Christchurch",    120,    0.346,  127.39),
+    ("Tauranga",        220,    0.700,   97.23),
+    ("Auckland",         55,    0.251,   55.00),
+    ("Maranda",         259,    0.456,  373.14),
+    ("Waipukurau",      980,    0.800,  496.06),
+    ("Whangarei Heads", 980,    1.100,  559.52),
+    ("Napier",          102,    0.300,   97.23),
+    ("Mt Maunganui",    230,    0.432,   97.23),
+    ("Napier",           97,    0.154,   97.23),
+    ("Warkworth",      2565,    3.900,  638.72),
+    ("Invercargill",    130,    0.324,  182.52),
+]
 
-```bash
-pip install streamlit pandas openpyxl numpy
-```
+# =============================================================================
+# CONSTANTS
+# =============================================================================
 
-## Running the Application
+VOLUMETRIC_FACTOR  = 333    # kg per m³ (A2 Road Freight standard)
+SAFETY_MARGIN      = 1.10   # 10% buffer when only northern refs available
+WARKWORTH_LAT      = -36.4
+WARKWORTH_LNG      = 174.6667
+DEFAULT_FAF_PCT    = 35.0   # Current diesel surcharge (April 2026)
 
-### Local Development
+# Regional latitude boundaries
+UPPER_NI_BOUNDARY  = -39.0
+LOWER_NI_BOUNDARY  = -41.5
 
-```bash
-cd "/path/to/A2 Road Freight Model Data For Claude"
-streamlit run freight_estimator.py
-```
+# =============================================================================
+# HELPER FUNCTIONS
+# =============================================================================
 
-The app will open in your default browser at `http://localhost:8501`
+def haversine(lat1, lon1, lat2, lon2):
+    """Straight-line distance in km between two lat/lng points."""
+    R = 6371
+    lat1, lon1, lat2, lon2 = map(radians, [lat1, lon1, lat2, lon2])
+    a = sin((lat2 - lat1) / 2)**2 + cos(lat1) * cos(lat2) * sin((lon2 - lon1) / 2)**2
+    return R * 2 * asin(sqrt(a))
 
-### Deployment (for multi-user access)
 
-For production use with multiple users, deploy to Streamlit Cloud:
+def get_region(lat):
+    if lat > UPPER_NI_BOUNDARY:
+        return "Upper North Island"
+    elif lat > LOWER_NI_BOUNDARY:
+        return "Lower North Island"
+    else:
+        return "South Island"
 
-1. Create a GitHub repository with these files:
-   - `freight_estimator.py`
-   - `nz.xlsx`
-   - `requirements.txt` (see below)
 
-2. Visit [share.streamlit.io](https://share.streamlit.io)
+def volumetric_weight(volume_m3):
+    return volume_m3 * VOLUMETRIC_FACTOR
 
-3. Connect your GitHub repository
 
-4. Deploy the app
+def chargeable_weight(actual_kg, volume_m3):
+    vol_wt = volumetric_weight(volume_m3)
+    return max(actual_kg, vol_wt), vol_wt
 
-**requirements.txt:**
-```
-streamlit>=1.28.0
-pandas>=2.0.0
-openpyxl>=3.1.0
-numpy>=1.24.0
-```
 
-## How to Use
+# =============================================================================
+# DATA PREPARATION  (runs once at startup)
+# =============================================================================
 
-### 1. Upload Historical Invoice Data (First Time Setup)
+@st.cache_data
+def load_locations():
+    df = pd.DataFrame(NZ_LOCATIONS_RAW, columns=["city", "latitude", "longitude"])
+    df["city_lower"] = df["city"].str.lower()
+    return df
 
-1. Navigate to the **"Data Sandbox"** tab
-2. Prepare your invoice CSV with these columns:
-   - `Town`: Destination town name
-   - `Actual_Weight_kg`: Actual weight in kilograms
-   - `Volume_m3`: Volume in cubic meters
-   - `Single_Price`: Total all-inclusive delivery price
-3. Upload the CSV file
-4. Click **"Process and Save Data"**
 
-**Example CSV format:**
-```csv
-Town,Actual_Weight_kg,Volume_m3,Single_Price
-Auckland,150,0.45,85.50
-Christchurch,300,0.90,175.00
-Hamilton,200,0.60,95.00
-```
+@st.cache_data
+def load_historical():
+    rows = []
+    loc_df = load_locations()
+    loc_lookup = {r.city_lower: r for r in loc_df.itertuples()}
 
-A sample template (`sample_invoice_template.csv`) is provided in this folder.
+    for town, actual_kg, vol_m3, price in HISTORICAL_DATA_RAW:
+        vol_wt = volumetric_weight(vol_m3)
+        chg_wt = max(actual_kg, vol_wt)
+        rate_per_kg = price / chg_wt if chg_wt > 0 else 0
 
-### 2. Calculate Freight Estimates
+        match = loc_lookup.get(town.lower())
+        lat   = match.latitude  if match else None
+        lng   = match.longitude if match else None
+        city  = match.city      if match else None
+        region = get_region(lat) if lat else None
+        dist = haversine(WARKWORTH_LAT, WARKWORTH_LNG, lat, lng) if lat else None
 
-1. Go to the **"Rate Calculator"** tab
-2. Select destination town from dropdown
-3. Enter actual weight (kg)
-4. Enter volume (m³)
-5. Click **"Calculate Estimate"**
+        rows.append({
+            "Town":             town,
+            "Actual_Weight_kg": actual_kg,
+            "Volume_m3":        vol_m3,
+            "Single_Price":     price,
+            "Volumetric_Weight_kg": vol_wt,
+            "Chargeable_Weight_kg": chg_wt,
+            "Cost_Per_kg":      rate_per_kg,
+            "city":             city,
+            "latitude":         lat,
+            "longitude":        lng,
+            "region":           region,
+            "Distance_from_Warkworth_km": dist,
+        })
+    return pd.DataFrame(rows)
 
-The tool will display:
-- Estimated total cost
-- Chargeable weight (greater of actual or volumetric)
-- Rate per kg
-- Calculation method used
-- Reference towns (if applicable)
-- Whether safety margin was applied
 
-### 3. View Historical Data
+# =============================================================================
+# ESTIMATION ENGINE
+# =============================================================================
 
-Use the **"Historical Data"** tab to:
-- Browse all processed invoices
-- Filter by region or town
-- See average rates by destination
-- Identify pricing trends
+def estimate_freight(town_name, actual_kg, volume_m3, faf_pct, hist_df, loc_df):
+    """
+    Returns a dict with estimate details, or raises ValueError if town not found.
+    FAF is applied as a percentage on top of the base rate.
+    """
+    faf_multiplier = 1 + faf_pct / 100
 
-### 4. Monthly Updates
+    # Resolve destination town in location DB
+    loc_match = loc_df[loc_df["city_lower"] == town_name.lower()]
+    if loc_match.empty:
+        raise ValueError(f"'{town_name}' not found in location database. Check spelling.")
 
-To update the database with new invoices:
-1. Export your monthly invoices to CSV format
-2. Go to **"Data Sandbox"** tab
-3. Upload the new CSV file
-4. The system will append the new data to existing records
+    dest_lat  = loc_match.iloc[0]["latitude"]
+    dest_lng  = loc_match.iloc[0]["longitude"]
+    dest_city = loc_match.iloc[0]["city"]
+    region    = get_region(dest_lat)
 
-## Calculation Logic
+    chg_wt, vol_wt = chargeable_weight(actual_kg, volume_m3)
+    weight_basis = "Volumetric" if vol_wt > actual_kg else "Actual"
 
-### The "Greater Of" Rule
+    # --- Method 1: Direct historical average ---
+    town_history = hist_df[hist_df["Town"].str.lower() == town_name.lower()]
+    if not town_history.empty:
+        base_rate = town_history["Cost_Per_kg"].mean()
+        base_cost = base_rate * chg_wt
+        final_cost = base_cost * faf_multiplier
+        return {
+            "destination":    dest_city,
+            "region":         region,
+            "actual_weight":  actual_kg,
+            "volumetric_weight": vol_wt,
+            "chargeable_weight": chg_wt,
+            "weight_basis":   weight_basis,
+            "base_rate_per_kg": base_rate,
+            "base_cost":      base_cost,
+            "faf_pct":        faf_pct,
+            "final_cost":     final_cost,
+            "method":         "Historical Average",
+            "reference_towns": [dest_city],
+            "safety_margin_applied": False,
+            "invoice_count":  len(town_history),
+        }
 
-For every delivery:
-```
-Volumetric Weight = Volume (m³) × 333 kg/m³
-Chargeable Weight = MAX(Actual Weight, Volumetric Weight)
-```
+    # --- Method 2: Similar towns with southward bias ---
+    region_hist = hist_df[
+        (hist_df["region"] == region) &
+        hist_df["latitude"].notna() &
+        hist_df["Cost_Per_kg"].notna()
+    ].copy()
 
-### Regional Categories (by Latitude)
+    if region_hist.empty:
+        raise ValueError(f"No historical data available for {region}. Upload more invoice data.")
 
-- **Upper North Island**: Latitude > -39.0°
-- **Lower North Island**: -41.5° < Latitude ≤ -39.0°
-- **South Island**: Latitude ≤ -41.5°
+    # Towns at same or southern latitude (more negative = further south)
+    southern_refs = region_hist[region_hist["latitude"] <= dest_lat]
+    safety_applied = False
 
-### Estimation Methods
+    if len(southern_refs) >= 2:
+        # Pick 2 closest by haversine distance
+        southern_refs = southern_refs.copy()
+        southern_refs["dist"] = southern_refs.apply(
+            lambda r: haversine(dest_lat, dest_lng, r["latitude"], r["longitude"]), axis=1
+        )
+        refs = southern_refs.nsmallest(2, "dist")
+    else:
+        # Fall back to all region towns, add safety margin
+        safety_applied = True
+        region_hist = region_hist.copy()
+        region_hist["dist"] = region_hist.apply(
+            lambda r: haversine(dest_lat, dest_lng, r["latitude"], r["longitude"]), axis=1
+        )
+        refs = region_hist.nsmallest(2, "dist")
 
-**Method 1: Historical Average**
-- If the destination town exists in your historical data
-- Uses the average rate/kg from all previous deliveries to that town
+    base_rate = refs["Cost_Per_kg"].mean()
+    if safety_applied:
+        base_rate *= SAFETY_MARGIN
 
-**Method 2: Similar Towns with Southward Bias**
-- If the destination is new (no historical data)
-- Finds the 2 closest towns that are:
-  - In the same region
-  - At the same latitude OR south (more negative) of the destination
-- Averages their rates to estimate
+    base_cost  = base_rate * chg_wt
+    final_cost = base_cost * faf_multiplier
 
-**Safety Margin (10%)**
-- Applied when only northern towns are available as references
-- Prevents undercharging for longer distances from Warkworth
+    return {
+        "destination":       dest_city,
+        "region":            region,
+        "actual_weight":     actual_kg,
+        "volumetric_weight": vol_wt,
+        "chargeable_weight": chg_wt,
+        "weight_basis":      weight_basis,
+        "base_rate_per_kg":  base_rate / (SAFETY_MARGIN if safety_applied else 1),
+        "adj_rate_per_kg":   base_rate,
+        "base_cost":         base_cost,
+        "faf_pct":           faf_pct,
+        "final_cost":        final_cost,
+        "method":            "Similar Towns (Southward Bias)",
+        "reference_towns":   refs["Town"].tolist(),
+        "safety_margin_applied": safety_applied,
+        "invoice_count":     None,
+    }
 
-### Cost Formula
 
-```
-Estimated Cost = Rate per kg × Chargeable Weight
-```
+# =============================================================================
+# STREAMLIT UI
+# =============================================================================
 
-## File Structure
+def main():
+    st.set_page_config(
+        page_title="A2 Road Freight Estimator",
+        page_icon="🚚",
+        layout="wide",
+        initial_sidebar_state="expanded",
+    )
 
-```
-A2 Road Freight Model Data For Claude/
-├── freight_estimator.py              # Main Streamlit application
-├── nz.xlsx                           # NZ location database (city, lat, lng)
-├── sample_invoice_template.csv       # Example invoice format
-├── historical_freight_data.csv       # Auto-generated from uploads
-└── README.md                         # This file
-```
+    loc_df  = load_locations()
+    hist_df = load_historical()
 
-## Troubleshooting
+    # ── Sidebar ──────────────────────────────────────────────────────────────
+    with st.sidebar:
+        st.image("https://img.icons8.com/fluency/96/delivery-truck.png", width=72)
+        st.title("A2 Road Freight")
+        st.caption("Origin: Warkworth, NZ")
+        st.divider()
 
-### "Town not found in location database"
-- Check spelling of town name
-- Ensure town exists in `nz.xlsx`
-- Town names are case-insensitive but must match exactly
+        st.subheader("⛽ Fuel Adjustment Factor (FAF)")
+        faf_pct = st.number_input(
+            "FAF %",
+            min_value=0.0,
+            max_value=200.0,
+            value=DEFAULT_FAF_PCT,
+            step=0.5,
+            format="%.1f",
+            help=(
+                "Applied on top of all base rates. "
+                "Update this each Monday to reflect current diesel costs. "
+                f"Default: {DEFAULT_FAF_PCT}% (set April 2026 — diesel surcharge)"
+            ),
+        )
 
-### "No historical data found for region"
-- Upload more invoice data covering that region
-- The tool needs at least one historical record in the region
+        if faf_pct == DEFAULT_FAF_PCT:
+            st.info(f"📌 Current FAF: **{faf_pct:.1f}%** (April 2026 diesel surcharge)")
+        elif faf_pct > DEFAULT_FAF_PCT:
+            st.warning(f"⬆️ FAF raised to **{faf_pct:.1f}%**")
+        else:
+            st.success(f"⬇️ FAF reduced to **{faf_pct:.1f}%**")
 
-### Data not saving
-- Check file permissions in the directory
-- Ensure you have write access to create `historical_freight_data.csv`
+        st.divider()
+        st.caption(f"v2.0 | {datetime.now().strftime('%d %b %Y')}")
+        st.caption(f"📦 {len(hist_df)} invoices | 🗺️ {len(loc_df)} towns")
 
-### App won't start
-- Verify all dependencies are installed: `pip list`
-- Check Python version: `python --version` (must be 3.8+)
-- Ensure `nz.xlsx` is in the same directory as `freight_estimator.py`
+    # ── Tabs ──────────────────────────────────────────────────────────────────
+    tab_calc, tab_history, tab_sandbox = st.tabs(
+        ["🧮 Rate Calculator", "📊 Historical Data", "📂 Data Sandbox"]
+    )
 
-## Support & Feedback
+    # ── TAB 1: Rate Calculator ────────────────────────────────────────────────
+    with tab_calc:
+        st.header("Freight Rate Calculator")
+        st.markdown(
+            f"Estimates include a **{faf_pct:.1f}% FAF** (Fuel Adjustment Factor) "
+            "applied on top of base rates derived from historical invoices."
+        )
 
-For technical issues or feature requests, contact your system administrator.
+        col1, col2 = st.columns([1, 1])
 
-## Version History
+        with col1:
+            st.subheader("Shipment Details")
+            all_towns = sorted(loc_df["city"].tolist())
+            destination = st.selectbox(
+                "Destination town",
+                options=all_towns,
+                index=all_towns.index("Auckland") if "Auckland" in all_towns else 0,
+            )
+            actual_weight = st.number_input(
+                "Actual weight (kg)",
+                min_value=0.1,
+                value=100.0,
+                step=10.0,
+            )
+            volume = st.number_input(
+                "Volume (m³)",
+                min_value=0.001,
+                value=0.300,
+                step=0.050,
+                format="%.3f",
+            )
 
-- **v1.0** (February 2026) - Initial release
-  - Core estimation engine
-  - Southward bias logic
-  - Data sandbox for CSV uploads
-  - Multi-user Streamlit interface
+            calculate = st.button("Calculate Estimate", type="primary", use_container_width=True)
 
----
+        with col2:
+            st.subheader("Estimate")
 
-**Built for A2 Road Freight | Origin: Warkworth, New Zealand**
+            if calculate:
+                try:
+                    result = estimate_freight(
+                        destination, actual_weight, volume, faf_pct, hist_df, loc_df
+                    )
+
+                    # Main result
+                    st.metric(
+                        label="Estimated Total Cost (incl. FAF)",
+                        value=f"${result['final_cost']:,.2f}",
+                        delta=f"+{faf_pct:.1f}% FAF on ${result['base_cost']:,.2f} base",
+                    )
+                    st.divider()
+
+                    # Detail grid
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        st.metric("Chargeable Weight", f"{result['chargeable_weight']:.1f} kg")
+                        st.metric("Weight Basis", result["weight_basis"])
+                        st.metric("Region", result["region"])
+                    with c2:
+                        st.metric("Base Rate/kg", f"${result['base_rate_per_kg']:.4f}")
+                        st.metric("Base Cost (ex-FAF)", f"${result['base_cost']:,.2f}")
+                        st.metric("Calc Method", result["method"])
+
+                    # Extra detail
+                    with st.expander("Full breakdown"):
+                        st.write(f"**Destination:** {result['destination']}")
+                        st.write(f"**Actual weight:** {result['actual_weight']:.1f} kg")
+                        st.write(f"**Volumetric weight:** {result['volumetric_weight']:.1f} kg "
+                                 f"(= {volume:.3f} m³ × 333)")
+                        st.write(f"**Chargeable weight:** {result['chargeable_weight']:.1f} kg "
+                                 f"(greater of actual vs volumetric)")
+                        st.write(f"**Reference towns:** {', '.join(result['reference_towns'])}")
+                        if result["safety_margin_applied"]:
+                            st.warning("⚠️ 10% safety margin applied — only northern reference towns available.")
+                        if result.get("invoice_count"):
+                            st.write(f"**Historical invoices used:** {result['invoice_count']}")
+                        st.write(f"**FAF applied:** {faf_pct:.1f}% → ×{1 + faf_pct/100:.3f}")
+
+                except ValueError as e:
+                    st.error(f"❌ {e}")
+            else:
+                st.info("👈 Enter shipment details and click **Calculate Estimate**")
+
+                # Show a quick reference
+                st.markdown("#### Quick reference (base rates, ex-FAF)")
+                sample_towns = ["Auckland", "Wellington", "Christchurch", "Dunedin", "Tauranga"]
+                ref_rows = []
+                for t in sample_towns:
+                    th = hist_df[hist_df["Town"].str.lower() == t.lower()]
+                    if not th.empty:
+                        ref_rows.append({
+                            "Town": t,
+                            "Avg base rate/kg": f"${th['Cost_Per_kg'].mean():.4f}",
+                            "Invoices": len(th),
+                        })
+                if ref_rows:
+                    st.dataframe(pd.DataFrame(ref_rows), use_container_width=True, hide_index=True)
+
+    # ── TAB 2: Historical Data ─────────────────────────────────────────────────
+    with tab_history:
+        st.header("Historical Invoice Data")
+
+        col_f1, col_f2 = st.columns(2)
+        with col_f1:
+            region_filter = st.selectbox(
+                "Filter by region",
+                ["All"] + sorted(hist_df["region"].dropna().unique().tolist()),
+            )
+        with col_f2:
+            town_filter = st.selectbox(
+                "Filter by town",
+                ["All"] + sorted(hist_df["Town"].unique().tolist()),
+            )
+
+        display_df = hist_df.copy()
+        if region_filter != "All":
+            display_df = display_df[display_df["region"] == region_filter]
+        if town_filter != "All":
+            display_df = display_df[display_df["Town"] == town_filter]
+
+        st.dataframe(
+            display_df[[
+                "Town", "region", "Actual_Weight_kg", "Volume_m3",
+                "Chargeable_Weight_kg", "Single_Price", "Cost_Per_kg",
+                "Distance_from_Warkworth_km"
+            ]].style.format({
+                "Single_Price":              "${:.2f}",
+                "Cost_Per_kg":               "${:.4f}",
+                "Chargeable_Weight_kg":      "{:.1f}",
+                "Distance_from_Warkworth_km": "{:.0f}",
+            }),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        st.divider()
+        st.subheader("Average rates by town")
+        avg_rates = (
+            hist_df.groupby("Town")
+            .agg(
+                Avg_Rate_Per_kg=("Cost_Per_kg", "mean"),
+                Invoices=("Cost_Per_kg", "count"),
+                Region=("region", "first"),
+            )
+            .reset_index()
+            .sort_values("Avg_Rate_Per_kg")
+        )
+        avg_rates["With Current FAF"] = avg_rates["Avg_Rate_Per_kg"] * (1 + faf_pct / 100)
+
+        st.dataframe(
+            avg_rates.style.format({
+                "Avg_Rate_Per_kg":  "${:.4f}",
+                "With Current FAF": "${:.4f}",
+            }),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    # ── TAB 3: Data Sandbox ────────────────────────────────────────────────────
+    with tab_sandbox:
+        st.header("Data Sandbox — Add New Invoice Data")
+        st.markdown(
+            "Upload new invoice records to supplement the built-in historical data. "
+            "Uploaded data is available for this session only. "
+            "To permanently add records, contact your system administrator."
+        )
+
+        st.subheader("Expected CSV format")
+        sample = pd.DataFrame([
+            {"Town": "Auckland",     "Actual_Weight_kg": 150, "Volume_m3": 0.45, "Single_Price": 85.50},
+            {"Town": "Christchurch", "Actual_Weight_kg": 300, "Volume_m3": 0.90, "Single_Price": 175.00},
+        ])
+        st.dataframe(sample, use_container_width=True, hide_index=True)
+
+        uploaded = st.file_uploader("Upload invoice CSV", type=["csv"])
+        if uploaded:
+            try:
+                new_df = pd.read_csv(uploaded)
+                required = {"Town", "Actual_Weight_kg", "Volume_m3", "Single_Price"}
+                missing = required - set(new_df.columns)
+                if missing:
+                    st.error(f"Missing columns: {missing}")
+                else:
+                    st.success(f"✅ Loaded {len(new_df)} new records.")
+                    st.dataframe(new_df, use_container_width=True, hide_index=True)
+                    st.info("These records are available in this session. Refresh the page to reset.")
+            except Exception as e:
+                st.error(f"Error reading file: {e}")
+
+
+if __name__ == "__main__":
+    main()
